@@ -37,3 +37,4 @@ secret.story.*
 server/uploads/*
 
 server/tests/__pycache__/
+server/settings.json
