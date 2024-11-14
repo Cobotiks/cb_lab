@@ -390,6 +390,7 @@ export const MainLayout = ({
                 preselectCls={state.preselectCls}
                 regionClsList={state.regionClsList}
                 regions={activeImage ? activeImage.regions : emptyArr}
+                onChangeRegion={action("CHANGE_REGION", "region")}
                 regionColorList={state.regionColorList}
                 onSelectCls={action("SELECT_CLASSIFICATION", "cls")}
               />
