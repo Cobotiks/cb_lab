@@ -110,6 +110,119 @@ class Module:
 
         # return regionData
 
+    def updateCsvData(self, csv_path, file_type):
+        """
+        Updates or replaces a database CSV file based on the provided CSV file.
+        
+        Args:
+            csv_path (str): Path to the full CSV file to be processed
+            file_type (str): Type of the database file to update. Must be one of:
+                            'image', 'circle', 'box', 'polygon'
+            
+        Returns:
+            bool: True if update was successful, False otherwise
+        """
+        try:
+            # Validate and get target path based on file type
+            file_type = file_type.lower()
+            if file_type == 'image':
+                target_path = imageInfoName
+            elif file_type == 'circle':
+                target_path = circleRegionInfo
+            elif file_type == 'box':
+                target_path = boxRegionInfo
+            elif file_type == 'polygon':
+                target_path = polygonInfo
+            else:
+                raise ValueError("file_type must be one of: 'image', 'circle', 'box', 'polygon'")
+                
+            # Check if the source CSV file exists
+            if not os.path.exists(csv_path):
+                raise FileNotFoundError(f"CSV file at {csv_path} not found.")
+                
+            # Read the new CSV file
+            new_csv_data = pd.read_csv(csv_path)
+            
+            # If target file doesn't exist in db, create it with new data
+            if not os.path.exists(target_path):
+                new_csv_data.to_csv(target_path, index=False)
+                print(f"New CSV file created in database at {target_path}")
+                
+                # Update the corresponding DataFrame in memory
+                self._update_dataframe_in_memory(file_type, new_csv_data)
+                return True
+                
+            # Read the existing file
+            existing_data = pd.read_csv(target_path)
+            
+            # Check if the CSV data has the same structure
+            if set(new_csv_data.columns) == set(existing_data.columns):
+                # Get the appropriate ID column based on file type
+                id_column = self._get_id_column(file_type)
+                        
+                if id_column and id_column in new_csv_data.columns:
+                    # Create a merged dataset
+                    merged_data = pd.merge(
+                        existing_data,
+                        new_csv_data,
+                        on=id_column,
+                        how='outer',
+                        suffixes=('_old', '')
+                    )
+                    
+                    # For each row, prefer the new data if available
+                    for col in existing_data.columns:
+                        if col != id_column:
+                            col_old = f"{col}_old"
+                            if col_old in merged_data.columns:
+                                merged_data[col] = merged_data[col].fillna(merged_data[col_old])
+                                merged_data.drop(columns=[col_old], inplace=True)
+                    
+                    # Save the updated data
+                    merged_data.to_csv(target_path, index=False)
+                    print(f"CSV at {target_path} updated successfully with merged data")
+                    
+                    # Update the corresponding DataFrame in memory
+                    self._update_dataframe_in_memory(file_type, merged_data)
+                else:
+                    # If no matching ID column found, replace the entire file
+                    new_csv_data.to_csv(target_path, index=False)
+                    print(f"CSV at {target_path} replaced with new data (no matching ID column found)")
+                    
+                    # Update the corresponding DataFrame in memory
+                    self._update_dataframe_in_memory(file_type, new_csv_data)
+            else:
+                # If column structures don't match, replace the entire file
+                new_csv_data.to_csv(target_path, index=False)
+                print(f"CSV at {target_path} replaced with new data (different column structure)")
+                
+                # Update the corresponding DataFrame in memory
+                self._update_dataframe_in_memory(file_type, new_csv_data)
+                
+            return True
+            
+        except Exception as e:
+            print(f"Error updating CSV data: {e}")
+            return False
+
+    def _get_id_column(self, file_type):
+        """Helper method to determine the ID column based on the file type."""
+        if file_type == 'image':
+            return "image-src"
+        elif file_type in {'circle', 'box', 'polygon'}:
+            return "region-id"
+        return None
+
+    def _update_dataframe_in_memory(self, file_type, new_data):
+        """Helper method to update the corresponding DataFrame in memory."""
+        if file_type == 'image':
+            self.imagesInfo = new_data.copy()
+        elif file_type == 'circle':
+            self.imageCircleRegions = new_data.copy()
+        elif file_type == 'box':
+            self.imageBoxRegions = new_data.copy()
+        elif file_type == 'polygon':
+            self.imagePolygonRegions = new_data.copy()
     def saveRegionInDB(
         self, database, idColumn, uid, data, status
     ):  # TODO if region then use one or zero changeSatus, remove in their

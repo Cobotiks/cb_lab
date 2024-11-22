@@ -1,22 +1,19 @@
-import React, { useState, useEffect } from "react"
-import { styled } from "@mui/material/styles"
-import Box from "@mui/material/Box"
-import Typography from "@mui/material/Typography"
-import Button from "@mui/material/Button"
+import React, { useState, useEffect, useCallback, useRef } from "react"
+import { Box, Typography, Button, Snackbar, Alert } from "@mui/material"
 import PropTypes from "prop-types"
-import ImageUpload from "../ImageUpload"
-import { useSettings } from "../SettingsProvider"
 import { useTranslation } from "react-i18next"
 import useMediaQuery from "@mui/material/useMediaQuery"
 import { createTheme } from "@mui/material/styles"
-import { saveSettings } from "../utils/send-data-to-server.js"
+import CloudUploadIcon from '@mui/icons-material/CloudUpload'
 import Brightness4Icon from '@mui/icons-material/Brightness4'
 import Brightness7Icon from '@mui/icons-material/Brightness7'
+
+// Custom Hooks and Components
+import { useSettings } from "../SettingsProvider"
 import { useTheme } from "../ThemeContext"
+import ImageUpload from "../ImageUpload"
+import { saveSettings,uploadCsvToBackend } from "../utils/send-data-to-server.js"
 
-const defaultTheme = createTheme()
-
-// Default configuration settings with updated label structure
 const DEFAULT_SETTINGS = {
   taskDescription: "Image Annotation Task",
   taskChoice: "object_detection",
@@ -33,19 +30,29 @@ const DEFAULT_SETTINGS = {
   }
 }
 
+const defaultTheme = createTheme()
+
 const SetupPage = ({
   setConfiguration,
   settings,
   setShowLabel,
   showAnnotationLab,
 }) => {
+  // Hooks
   const settingsConfig = useSettings()
   const isSmallDevice = useMediaQuery(defaultTheme.breakpoints.down("sm"))
-  const isLargeDevice = useMediaQuery(defaultTheme.breakpoints.up("md"))
   const { theme, toggleTheme } = useTheme()
   const { t } = useTranslation()
-  const [isInitialized, setIsInitialized] = useState(false)
 
+  // State Management
+  const [isInitialized, setIsInitialized] = useState(false)
+  const [csvFiles, setCsvFiles] = useState([])
+  const [uploadStatus, setUploadStatus] = useState("")
+  const [showAlert, setShowAlert] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
+  const folderInputRef = useRef(null)
+
+  // Initialization Effect
   useEffect(() => {
     if (!isInitialized) {
       const initialSettings = {
@@ -76,6 +83,7 @@ const SetupPage = ({
     }
   }, [isInitialized])
 
+  // Image Upload Handler
   const handleImageUpload = (images) => {
     const extractedNames = images.map((image) => {
       let src = image.preview || image.src
@@ -103,6 +111,44 @@ const SetupPage = ({
     setConfiguration({ type: "UPDATE_IMAGES", payload: extractedNames })
   }
 
+  // CSV Upload to Backend
+  
+
+  // Folder Selection Handler
+  const handleFolderSelect = useCallback(async (event) => {
+    const fileList = event.target.files
+    const files = Array.from(fileList)
+    
+    const csvFiles = files.filter(file => {
+      const fileName = file.webkitRelativePath || file.name
+      return fileName.toLowerCase().endsWith('.csv')
+    })
+    
+    if (csvFiles.length === 0) {
+      setUploadStatus("No CSV files found in the selected folder")
+      setShowAlert(true)
+      return
+    }
+    
+    if (csvFiles.length > 4) {
+      setUploadStatus("Maximum 4 CSV files are allowed at a time")
+      setShowAlert(true)
+      return
+    }
+    
+    setCsvFiles(csvFiles)
+    setUploadStatus(`Found ${csvFiles.length} CSV file(s)`)
+    setShowAlert(true)
+  }, [])
+
+  // Trigger Folder Input
+  const triggerFolderInput = () => {
+    if (folderInputRef.current) {
+      folderInputRef.current.click()
+    }
+  }
+
+  // Theme Mode Update
   const updateMode = async (mode) => {
     toggleTheme(mode)
     const newSettings = {
@@ -113,16 +159,44 @@ const SetupPage = ({
     await saveSettings(newSettings)
   }
 
+  // Show Annotation Lab with CSV Upload
   const showLab = async () => {
-    const newSettings = { 
-      ...settings, 
-      mode: theme, 
-      showLab: true
+    try {
+      // Start uploading CSVs
+      setIsUploading(true)
+      setUploadStatus("Uploading CSV files...")
+      setShowAlert(true)
+
+      // Upload all CSV files
+      if (csvFiles.length > 0) {
+        const uploadPromises = csvFiles.map(file => uploadCsvToBackend(file))
+        await Promise.all(uploadPromises)
+      }
+
+      // Proceed to show lab
+      const newSettings = { 
+        ...settings, 
+        mode: theme, 
+        showLab: true,
+        csvFiles: csvFiles.map(file => file.name) // Store CSV file names in settings
+      }
+      
+      setShowLabel(true)
+      settingsConfig.changeSetting("settings", newSettings)
+      await saveSettings(newSettings)
+      showAnnotationLab(newSettings)
+
+      // Update upload status
+      setUploadStatus("CSV files uploaded successfully")
+      setShowAlert(true)
+    } catch (error) {
+      // Handle upload errors
+      setUploadStatus("Error uploading CSV files")
+      setShowAlert(true)
+      console.error("CSV Upload Error:", error)
+    } finally {
+      setIsUploading(false)
     }
-    setShowLabel(true)
-    settingsConfig.changeSetting("settings", newSettings)
-    await saveSettings(newSettings)
-    showAnnotationLab(newSettings)
   }
 
   return (
@@ -133,6 +207,7 @@ const SetupPage = ({
       marginTop={isSmallDevice ? "" : "5rem"}
     >
       <Box>
+        {/* Theme Toggle Button */}
         <Button
           sx={{
             paddingTop: isSmallDevice ? "0" : "0.5rem",
@@ -154,6 +229,7 @@ const SetupPage = ({
           }}
           width={isSmallDevice ? "auto" : "55vw"}
         >
+          {/* Image Upload Section */}
           <Typography
             gutterBottom
             sx={{
@@ -170,7 +246,55 @@ const SetupPage = ({
             onImageUpload={handleImageUpload}
             settingsImages={settings.images}
           />
+          
+          {/* CSV Folder Upload Section */}
+          <Box sx={{ mt: 4 }}>
+            <Typography
+              gutterBottom
+              sx={{
+                fontWeight: "bold",
+                color: "rgb(66, 66, 66)",
+                fontSize: "18px",
+                paddingBottom: "1rem",
+              }}
+            >
+              Upload CSV Folder
+            </Typography>
+            
+            <input
+              ref={folderInputRef}
+              type="file"
+              multiple
+              webkitdirectory="true"
+              directory="true"
+              onChange={handleFolderSelect}
+              style={{ display: 'none' }}
+              accept=".csv"
+            />
+            
+            <Button
+              variant="outlined"
+              onClick={triggerFolderInput}
+              startIcon={<CloudUploadIcon />}
+              sx={{ mb: 2 }}
+            >
+              Select Folder
+            </Button>
+
+            {csvFiles.length > 0 && (
+              <Box sx={{ mt: 2 }}>
+                <Typography variant="subtitle1">Selected CSV Files:</Typography>
+                {csvFiles.map((file, index) => (
+                  <Typography key={index} variant="body2" color="text.secondary">
+                    {file.webkitRelativePath || file.name}
+                  </Typography>
+                ))}
+              </Box>
+            )}
+          </Box>
         </Box>
+
+        {/* Open Lab Button */}
         <Box
           display="flex"
           justifyContent="end"
@@ -179,13 +303,28 @@ const SetupPage = ({
         >
           <Button
             variant="contained"
-            disabled={!settings.images.length}
+            disabled={!settings.images.length || isUploading}
             onClick={showLab}
             disableElevation
           >
-            {t("btn.open_lab")}
+            {isUploading ? "Uploading..." : "Open Lab"}
           </Button>
         </Box>
+
+        {/* Upload Status Snackbar */}
+        <Snackbar
+          open={showAlert}
+          autoHideDuration={6000}
+          onClose={() => setShowAlert(false)}
+        >
+          <Alert 
+            onClose={() => setShowAlert(false)} 
+            severity={uploadStatus.includes("Error") ? "error" : "success"}
+            sx={{ width: '100%' }}
+          >
+            {uploadStatus}
+          </Alert>
+        </Snackbar>
       </Box>
     </Box>
   )

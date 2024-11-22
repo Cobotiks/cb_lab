@@ -55,6 +55,23 @@ export const getAutoAnnotation = (imageData) => {
       })
   })
 }
+export const uploadCsvToBackend = async (file) => {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const response = await axios.post(`${config.SERVER_URL}/upload_csv`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+    
+    return response.data;
+  } catch (error) {
+    throw error.response ? error.response.data : error;
+  }
+};
+
 
 export const saveSettings = (settings) => {
   return new Promise((resolve, reject) => {

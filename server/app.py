@@ -15,6 +15,9 @@ import zipfile
 import math
 from sam_model import SamModel
 from utils import load_image_from_url, format_regions_for_frontend
+import os
+import traceback
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.config.from_object("config")
@@ -126,6 +129,85 @@ def save_annotate_info():
 # Allowed extensions
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif"}
 
+@app.route("/upload_csv", methods=["POST"])
+@cross_origin(origin=client_url, headers=["Content-Type"])
+def upload_csv():
+    try:
+        # Ensure a file is included in the request
+        if 'file' not in request.files:
+            return jsonify({
+                "status": "error", 
+                "message": "No file part in the request"
+            }), 400
+        
+        file = request.files['file']
+        
+        # Check if the file has a valid name
+        if file.filename == '':
+            return jsonify({
+                "status": "error", 
+                "message": "No file selected for upload"
+            }), 400
+        
+        # Verify the file type (ensure it's a CSV)
+        if not file.filename.lower().endswith('.csv'):
+            return jsonify({
+                "status": "error", 
+                "message": "Invalid file type. Please upload a CSV file."
+            }), 400
+
+        # Determine the file type from the filename
+        filename_lower = file.filename.lower()
+        if 'image' in filename_lower:
+            file_type = 'image'
+        elif 'circle' in filename_lower:
+            file_type = 'circle'
+        elif 'box' in filename_lower:
+            file_type = 'box'
+        elif 'polygon' in filename_lower:
+            file_type = 'polygon'
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "Unable to determine file type from filename."
+            }), 400
+
+        # Create temp directory if it doesn't exist
+        temp_dir = os.path.join(os.getcwd(), "temp")
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        # Secure the filename and create full path
+        secure_name = secure_filename(file.filename)
+        temp_path = os.path.join(temp_dir, secure_name)
+        
+        # Save the file
+        file.save(temp_path)
+
+        try:
+            # Process the file using the database module
+            if dbModule.updateCsvData(temp_path, file_type):
+                return jsonify({
+                    "status": "success",
+                    "message": f"CSV data processed and saved successfully as {file_type} data"
+                }), 200
+            else:
+                return jsonify({
+                    "status": "error",
+                    "message": "Failed to process and save CSV data"
+                }), 500
+        finally:
+            # Clean up: remove the temporary file
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            
+    except Exception as e:
+        # Handle exceptions and log the error
+        print(f"Error processing CSV upload: {e}")
+        print(f"Full error traceback:", traceback.format_exc())
+        return jsonify({
+            "status": "error",
+            "message": f"An error occurred while processing the CSV file: {str(e)}"
+        }), 500
 
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
