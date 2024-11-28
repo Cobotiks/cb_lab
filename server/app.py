@@ -1065,6 +1065,172 @@ def download_image_mask():
             print(f"Error cleaning up temporary directory: {e}")
 
 
+# start
+# @app.route("/download_image_mask", methods=["POST"])
+# @cross_origin(origin=client_url, headers=["Content-Type"])
+# def download_image_mask():
+#     try:
+#         data = request.get_json()
+#         # Ensure the expected structure of the JSON data
+#         image_names = data.get("image_names", [])
+#         if not image_names:
+#             raise ValueError("Invalid JSON data format: 'image_names' not found.")
+
+#         # Initialize a temporary directory to store mask images
+#         temp_dir = tempfile.mkdtemp()
+
+#         # Process each image and create masks
+#         zip_filename = "image_masks.zip"
+#         zip_file_path = os.path.join(temp_dir, zip_filename)
+
+#         with zipfile.ZipFile(zip_file_path, "w") as zipf:
+#             for image_name in image_names:
+#                 json_bytes, download_filename = create_json_response(image_name)
+#                 json_str = json_bytes.getvalue().decode("utf-8")
+#                 images = json.loads(json_str).get("configuration", [])
+
+#                 for image_info in images:
+#                     regions = image_info.get("regions", [])
+#                     if not regions:
+#                         continue  # Skip if no regions are present
+
+#                     region = regions[0]  # Take the first region
+#                     image_url = region.get("image-src")
+#                     # Docker container uses port 5000, so replace 5001 with 5000
+#                     if "127.0.0.1:5001" in image_url:
+#                         image_url = image_url.replace(
+#                             "127.0.0.1:5001", "127.0.0.1:5000"
+#                         )
+#                     elif "http://rocky-badlands-09400-2bb445641857.herokuapp.com" in image_url:
+#                         image_url = image_url.replace(
+#                             "http://rocky-badlands-09400-2bb445641857.herokuapp.com",
+#                             "https://rocky-badlands-09400-2bb445641857.herokuapp.com",
+#                         )
+
+#                     response = requests.get(image_url)
+#                     response.raise_for_status()
+#                     image = Image.open(BytesIO(response.content))
+#                     width, height = image.size
+                    
+#                     # Create a binary mask (1-bit black and white)
+#                     mask = Image.new("1", (width, height), 0)  # Initialize with all black (0)
+#                     draw = ImageDraw.Draw(mask)
+
+#                     for region in image_info.get("regions", []):
+#                         if "points" in region and region["points"]:
+#                             points = region["points"]
+#                             scaled_points = [
+#                                 (int(x * width), int(y * height)) for x, y in points
+#                             ]
+#                             draw.polygon(
+#                                 scaled_points,
+#                                 fill=1,  # White/1 for the class region
+#                             )
+#                         elif all(key in region for key in ("x", "y", "w", "h")):
+#                             try:
+#                                 x = (
+#                                     float(region["x"][1:-1]) * width
+#                                     if isinstance(region["x"], str)
+#                                     else float(region["x"][0]) * width
+#                                 )
+#                                 y = (
+#                                     float(region["y"][1:-1]) * height
+#                                     if isinstance(region["y"], str)
+#                                     else float(region["y"][0]) * height
+#                                 )
+#                                 w = (
+#                                     float(region["w"][1:-1]) * width
+#                                     if isinstance(region["w"], str)
+#                                     else float(region["w"][0]) * width
+#                                 )
+#                                 h = (
+#                                     float(region["h"][1:-1]) * height
+#                                     if isinstance(region["h"], str)
+#                                     else float(region["h"][0]) * height
+#                                 )
+#                             except (ValueError, TypeError) as e:
+#                                 raise ValueError(
+#                                     f"Invalid format in region dimensions: {region}, Error: {e}"
+#                                 )
+#                             # Draw rectangle for bounding box
+#                             draw.rectangle(
+#                                 [x, y, x + w, y + h],
+#                                 fill=1,  # White/1 for the class region
+#                             )
+#                         elif all(key in region for key in ("rx", "ry", "rw", "rh")):
+#                             try:
+#                                 rx = (
+#                                     float(region["rx"][1:-1]) * width
+#                                     if isinstance(region["rx"], str)
+#                                     else float(region["rx"][0]) * width
+#                                 )
+#                                 ry = (
+#                                     float(region["ry"][1:-1]) * height
+#                                     if isinstance(region["ry"], str)
+#                                     else float(region["ry"][0]) * height
+#                                 )
+#                                 rw = (
+#                                     float(region["rw"][1:-1]) * width
+#                                     if isinstance(region["rw"], str)
+#                                     else float(region["rw"][0]) * width
+#                                 )
+#                                 rh = (
+#                                     float(region["rh"][1:-1]) * height
+#                                     if isinstance(region["rh"], str)
+#                                     else float(region["rh"][0]) * height
+#                                 )
+#                             except (ValueError, TypeError) as e:
+#                                 raise ValueError(
+#                                     f"Invalid format in region dimensions: {region}, Error: {e}"
+#                                 )
+#                             # Draw ellipse (circle if rw and rh are equal)
+#                             draw.ellipse(
+#                                 [rx, ry, rx + rw, ry + rh],
+#                                 fill=1,  # White/1 for the class region
+#                             )
+
+#                     # Save binary mask image to temporary directory
+#                     mask_filename = image_info.get("image-name")
+#                     mask_path = os.path.join(temp_dir, mask_filename)
+#                     mask.save(mask_path)
+
+#                     # Add mask image to zip file
+#                     zipf.write(mask_path, arcname=mask_filename)
+
+#         # Send zip file as response
+#         return send_file(
+#             zip_file_path,
+#             mimetype="application/zip",
+#             as_attachment=True,
+#             download_name=zip_filename,
+#         )
+
+#     except ValueError as ve:
+#         print("ValueError:", ve)
+#         traceback.print_exc()
+#         return jsonify({"error": str(ve)}), 400
+#     except requests.exceptions.RequestException as re:
+#         print("RequestException:", re)
+#         traceback.print_exc()
+#         return jsonify({"error": "Error fetching image from URL"}), 500
+#     except Exception as e:
+#         print("General error:", e)
+#         traceback.print_exc()
+#         return jsonify({"error": str(e)}), 500
+#     finally:
+#         # Clean up temporary directory
+#         try:
+#             if temp_dir:
+#                 for file in os.listdir(temp_dir):
+#                     file_path = os.path.join(temp_dir, file)
+#                     if os.path.isfile(file_path):
+#                         os.remove(file_path)
+#                 os.rmdir(temp_dir)
+#         except Exception as e:
+#             print(f"Error cleaning up temporary directory: {e}") 
+# end 
+
+
 def create_yolo_annotations(image_names, color_map=None):
     base_url = request.host_url + "uploads/"
     all_annotations = []
